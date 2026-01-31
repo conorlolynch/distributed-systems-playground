@@ -110,6 +110,11 @@ export function drawQueue(ctx, queueInstance) {
   });
 }
 
+export function drawWorkerPool(ctx) {
+  // Figure out the dimensions of the worker pool based on number of workers
+  const workerCount = Worker.workers.size;
+}
+
 export function drawWorker(ctx, worker) {
   const centerX = worker.x + worker.width / 2;
   const centerY = worker.y + worker.height / 2;

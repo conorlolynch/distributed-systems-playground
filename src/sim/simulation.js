@@ -1,5 +1,5 @@
 import { Queue } from "../sim/queue.js";
-import { Worker } from "../sim/worker.js";
+import { WorkerPool } from "../sim/workerPool.js";
 import {
   clearQueue,
   drawQueueOutline,
@@ -16,7 +16,13 @@ export let queue = [];
 export const queueInstance = new Queue(10, 10, 200, 100);
 
 // Spawn a worker
-new Worker("w1", 300, 10, 50, 50);
+//new Worker("w1", 300, 10, 50, 50);
+
+// Spawn a worker pool
+export const firstWorkerPool = new WorkerPool({
+  minNumWorkers: 2,
+  maxNumWorkers: 5,
+});
 
 /** Generates a random request */
 export function generateRequest() {
@@ -42,9 +48,30 @@ function draw(ctx) {
   drawQueueOutline(ctx, queueInstance);
   drawQueueItems(ctx, queueInstance);
 
-  Worker.workers.forEach((workerInstance) => {
-    drawWorker(ctx, workerInstance);
+  firstWorkerPool.workers.forEach((worker) => {
+    // Check if any workers have been idle for too long
+
+    if (worker.idle) {
+      const idleTime = performance.now() - worker.requestStartTime;
+      if (idleTime > firstWorkerPool.workerIdleDespawnTime) {
+        console.log("Despawning idle worker:", worker.id);
+        firstWorkerPool.despawnWorker(worker.id);
+      }
+    }
+
+    // Check to see if any jobs are complete
+    if (!worker.idle) {
+      const currentTime = performance.now();
+      if (currentTime >= worker.requestEndTime) {
+        // Finished processing
+        worker.stopProcessing();
+      }
+    }
   });
+
+  //Worker.workers.forEach((workerInstance) => {
+  //  drawWorker(ctx, workerInstance);
+  //});
 
   //drawWorker(ctx, Worker.getWorker("worker-1"));
 
@@ -82,20 +109,20 @@ export function gameLoop(ctx, dt) {
   //   });
 
   // Processing
-  Worker.workers.forEach((workerInstance) => {
-    if (workerInstance.idle) {
-      const requestObject = queueInstance.pop();
-      if (!requestObject) return; // No requests in the queue
-      workerInstance.processRequest(requestObject);
-      return;
-    } else {
-      const currentTime = performance.now();
-      if (currentTime >= workerInstance.requestEndTime) {
-        // Finished processing
-        workerInstance.stopProcessing();
-      }
-    }
-  });
+  //Worker.workers.forEach((workerInstance) => {
+  //  if (workerInstance.idle) {
+  //    const requestObject = queueInstance.pop();
+  //    if (!requestObject) return; // No requests in the queue
+  //    workerInstance.processRequest(requestObject);
+  //    return;
+  //  } else {
+  //    const currentTime = performance.now();
+  //    if (currentTime >= workerInstance.requestEndTime) {
+  // Finished processing
+  //      workerInstance.stopProcessing();
+  //    }
+  //  }
+  //});
 
   // Drawing
   draw(ctx);
