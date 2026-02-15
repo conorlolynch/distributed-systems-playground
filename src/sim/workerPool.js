@@ -3,14 +3,20 @@ import { TaskWorker } from "../sim/worker.js";
 export class WorkerPool {
   constructor({ minNumWorkers = 1, maxNumWorkers = 8 } = {}) {
     this.id = Math.random().toString(36).slice(2, 8);
+
     this.minNumWorkers = minNumWorkers;
     this.maxNumWorkers = maxNumWorkers;
+
     this.workers = [];
     this.averageWorkerStartupTime = 500; // ms for a worker to become active
-    this.workerIdleDespawnTime = 10000; // ms of idleness before a worker is despawned
+    this.idleDespawnTime = 10000; // ms of idleness before a worker is despawned
     this.listeners = new Set();
     this.cachedState = null;
     this.lastWorkerCount = 0;
+
+    // Tasks that a worker has been assigned but hasnt been passed to the CPU yet.
+    // This is to simulate the time between a worker being assigned a task and actually starting to process it on the CPU.
+    this.pendingTasks = [];
 
     // Spawn the initial minimum number of workers
     for (let i = 0; i < this.minNumWorkers; i++) {
@@ -19,21 +25,54 @@ export class WorkerPool {
   }
 
   /**
-   * Spawns a new worker and adds it to the pool, if the maximum number of workers hasn't been reached.
-   * Emits a state change to listeners after spawning.
+   * Creates a task for the CPU to spawn a new worker, and adds it to the pending tasks buffer.
+   * Emits an event to notify listeners that a worker spawn has been requested.
+   * When the CPU processes this task, it will create a new worker and emit another event to notify listeners that a worker has been spawned.
    * @return {Object|null} The newly spawned worker object, or null if the max has been reached.
    */
   spawnWorker() {
     if (this.workers.length >= this.maxNumWorkers) return null;
 
-    // Generate a worker
-    const newWorker = new TaskWorker(this.averageWorkerStartupTime);
-    if (!newWorker) return null;
+    // Create a task object, and store it in the pendingTasks array to be executed when CPU is ready.
+    const task = {
+      id: Math.random().toString(36).slice(2, 8),
+      name: "Spawn Worker Pool",
+      execute: () => {
+        const newWorker = new TaskWorker(this.averageWorkerStartupTime);
+        this.workers.push(newWorker);
+        console.log("Spawned worker:", newWorker.id);
+        this.emit({
+          type: "workerSpawned",
+        });
+      },
+    };
 
-    this.workers.push(newWorker);
-    console.log("Spawned worker:", newWorker.id);
-    this.emit();
-    return newWorker;
+    // Add this task to this intances pending tasks buffer. Later this will get flushed to the CPU's buffer, and will be executed when the CPU is ready to process it.
+    this.pendingTasks.push(task);
+
+    // Emit an event to notify that a worker spawn has been requested.
+    this.emit({
+      type: "workerSpawnRequested",
+      taskId: task.id,
+    });
+
+    // Generate a worker
+    //const newWorker = new TaskWorker(this.averageWorkerStartupTime);
+    //if (!newWorker) return null;
+
+    //this.workers.push(newWorker);
+    //console.log("Spawned worker:", newWorker.id);
+    //this.emit();
+    //return newWorker;
+  }
+
+  /**
+   * Important function: This should be called on each tick of the simulation/game loop to update the state of the worker pool.
+   * It checks for completed tasks, assigns new tasks from the buffer to idle workers, and despawns idle workers if necessary.
+   * @return {void}
+   */
+  update() {
+    // Generate tasks if needed
   }
 
   /**
@@ -42,15 +81,24 @@ export class WorkerPool {
    * @return {boolean} Whether a worker was successfully removed.
    */
   despawnWorker(id = null) {
-    // TODO TODO: We arent actually using Worker instances here yet... need to use them ...
+    // TODO: turn this into a task generator for the CPU
 
     // Ensure we don't go below the minimum number of workers
     if (this.workers.length <= this.minNumWorkers) {
-      console.warn("Cannot despawn worker: minimum number reached.");
       return false;
     }
 
     if (id !== null) {
+      const task = {
+        id: Math.random().toString(36).slice(2, 8),
+        name: "Despawn Worker",
+        execute: () => {
+          // Find the worker with that specific ID, if its idle, remove it from the pool
+        },
+      };
+
+      this.pendingTasks.push(task);
+
       // Find the worker with the specified ID
       for (let i = 0; i < this.workers.length; i++) {
         const worker = this.workers[i];
@@ -103,6 +151,19 @@ export class WorkerPool {
         this.emit();
         return true;
       }
+    }
+  }
+
+  /**
+   * Dispatches pending tasks to the CPU for processing. Should be called on each tick of the simulation/game loop.
+   * @param {CPU} The CPU instance to dispatch tasks to.
+   * @return {void}
+   */
+  dispatch(cpu) {
+    // Dispatch pending tasks to the CPU
+    while (this.pendingTasks.length > 0 && cpu.hasFreeCore()) {
+      const task = this.pendingTasks.shift();
+      cpu.addTask(task);
     }
   }
 
