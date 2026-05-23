@@ -1,3 +1,4 @@
+import { NetworkLayer } from "../sim/network.js";
 import { CPU } from "../sim/cpu.js";
 import { Queue } from "../sim/queue.js";
 import { WorkerPool } from "../sim/workerPool.js";
@@ -10,39 +11,25 @@ import {
 
 // Spawn traffic (Just )
 
-let requestCounter = 0;
 export let queue = [];
 
-const cpu = new CPU();
+export let isPaused = false;
+let listeners = new Set();
+
+export const network = new NetworkLayer();
+export const workerPool = new WorkerPool();
+
+network.subscribe(() => {
+  // Move everything from the incoming buffer to the worker pool task queue
+  while (network.incomingBuffer.length > 0) {
+    const request = network.incomingBuffer.shift();
+    workerPool.addTask(request);
+  }
+});
+export const cpu = new CPU();
 
 // Create a Queue instance
 export const queueInstance = new Queue(10, 10, 200, 100);
-
-// Spawn a worker
-//new Worker("w1", 300, 10, 50, 50);
-
-// Spawn a worker pool
-export const firstWorkerPool = new WorkerPool({
-  minNumWorkers: 2,
-  maxNumWorkers: 5,
-});
-
-/** Generates a random request */
-export function generateRequest() {
-  const params = ["name", "age"];
-
-  // todo:
-  // Generate a random data request which is a random collection of parameters and values
-
-  return {
-    id: requestCounter++,
-    data: {
-      name: "Conor",
-      minAge: 12,
-      maxAge: 50,
-    },
-  };
-}
 
 function draw(ctx) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -96,25 +83,48 @@ function draw(ctx) {
   //});
 }
 
+export function togglePause() {
+  isPaused = !isPaused;
+  emit();
+}
+
+export function subscribe(listener) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function emit() {
+  listeners.forEach((listener) => listener(isPaused));
+}
+
 export function gameLoop(ctx, dt) {
+  if (isPaused) return;
+
+  network.update(dt);
+
   // Worker Pool, run update
   // todo: need to make sure we are flushing the pending tasks buffer to the CPU's task queue
-  firstWorkerPool.dispatch(cpu);
+  workerPool.dispatch(cpu);
+
+  cpu.tick(dt);
 
   // CPU processing
   // 1) Check to see if any tasks have completed processing, if so release the token back to the cpu
-  cpu.clearFinishedTasks();
+  //cpu.clearFinishedTasks();
 
   // 2) Load in as many new tasks from the queue as there are free tokens.
-  while (cpu.freeIndexes.size > 0) {
-    const task = cpu.loadNextTask();
-    if (!task) break; // No more tasks to load
+  //while (cpu.freeIndexes.size > 0) {
+  //  const task = cpu.loadNextTask();
+  //  if (!task) break; // No more tasks to load
 
-    // If the task has code that can be executed, execute it (this simulates the processing of the task by the CPU)
-    if (task.execute) {
-      task.execute();
-    }
-  }
+  // If the task has code that can be executed, execute it (this simulates the processing of the task by the CPU)
+  //  if (task.execute) {
+  //    task.execute();
+  //    task.endTime = performance.now();
+  //  }
+  //}
 
   // Drawing
   draw(ctx);

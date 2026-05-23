@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import "./index.css";
 import {
-  generateRequest,
-  queue,
+  subscribe,
+  isPaused,
+  togglePause,
   gameLoop,
   queueInstance,
-  firstWorkerPool,
+  workerPool,
+  cpu,
 } from "./sim/simulation.js";
 import { SideEditor } from "./components/SideEditor.jsx";
 import { WorkerPool } from "./components/WorkerPool.jsx";
 import { NumberStepper } from "./components/NumberStepper.jsx";
+import { Queue } from "./components/Queue.jsx";
+import { CPU } from "./components/CPU.jsx";
 import Button from "react-bootstrap/Button";
 
 function App() {
@@ -20,31 +24,24 @@ function App() {
   });
   const canvasRef = useRef(null);
 
-  const addRequest = () => {
-    const requestObj = generateRequest();
-    queueInstance.add(requestObj);
-
-    console.log("Current Queue: ", queueInstance.items);
-  };
-
-  // Handles the moving of a request from the queue to a worker
-  const giveWorkerRequest = () => {
-    Worker.workers.forEach((workerInstance) => {
-      // Lets find a worker that is idle
-      if (workerInstance.idle) {
-        const reqObject = queueInstance.pop();
-        if (!reqObject) return; // No requests in the queue
-        workerInstance.processRequest(reqObject);
-      }
+  const [tasksComplete, setTasksComplete] = useState(cpu.tasksComplete);
+  useEffect(() => {
+    // Subscribe to CPU updates so the UI reflects `cpu.tasksComplete` changes
+    const unsubscribe = cpu.subscribe(() => {
+      setTasksComplete(cpu.tasksComplete);
     });
-  };
 
-  // Handles adding a new worker to the simulation
-  const addWorker = () => {
-    const numberOfWorkers = Worker.workers.size;
-    new Worker(`w${numberOfWorkers + 1}`, 450, 200, 50, 50);
-    console.log("Workers: ", Worker.workers);
-  };
+    return () => unsubscribe();
+  }, []);
+
+  const [paused, setPaused] = useState(isPaused);
+  useEffect(() => {
+    // subscribe to simulation state changes
+    const unsubscribe = subscribe(setPaused);
+
+    // cleanup when component unmounts
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     /**
@@ -70,52 +67,51 @@ function App() {
 
   return (
     <>
-      <button
-        onClick={() => {
-          firstWorkerPool.spawnWorker();
-        }}
-      >
-        Spawn
+      {/* Pause Button */}
+      <button onClick={togglePause}>
+        {paused ? "Resume" : "Pause"} Simulation
       </button>
-      <button
-        onClick={() => {
-          firstWorkerPool.despawnWorker();
-        }}
-      >
-        Despawn
-      </button>
-      {/* Background Layer */}
-      <div className="container">
-        {/* Main Canvas + SVG Area */}
-        <div className="stage">
-          <canvas
-            ref={canvasRef}
-            width={800}
-            height={500}
-            style={{ border: "2px solid black" }}
-          />
-          <WorkerPool
-            pool={firstWorkerPool}
-            setOffcanvasFunction={setOffcanvas}
-          />
-        </div>
 
-        {/* Side editor */}
-        <SideEditor
-          isOpen={offcanvas.open}
-          onClose={() =>
-            setOffcanvas({ open: false, type: null, payload: null })
-          }
-          title={offcanvas.title}
-        >
-          {renderSettings(offcanvas.type, offcanvas.payload)}
-        </SideEditor>
+      {/* Canvas Container */}
+      <div className="container-fluid">
+        <div className="row">
+          <div className="col">
+            {/* Main Canvas + SVG Area */}
+            <div className="stage">
+              <canvas
+                ref={canvasRef}
+                width={800}
+                height={500}
+                style={{ border: "2px solid black" }}
+              />
+              <Queue queue={queueInstance} />
+              <WorkerPool
+                pool={workerPool}
+                setOffcanvasFunction={setOffcanvas}
+              />
+              <CPU cpu={cpu} />
+            </div>
+          </div>
+        </div>
       </div>
-      {/* <div>
-        <button onClick={addRequest}>Add Request</button>
-        <button onClick={giveWorkerRequest}>Give Worker Request</button>
-        <button onClick={addWorker}>Add Worker</button>
-      </div> */}
+
+      {/* For now just tracking the number of CPU tasks complete so far */}
+      <div className="container-fluid">
+        <div className="row">
+          <div className="col">
+            <div>CPU Tasks Complete: {tasksComplete}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Side editor */}
+      <SideEditor
+        isOpen={offcanvas.open}
+        onClose={() => setOffcanvas({ open: false, type: null, payload: null })}
+        title={offcanvas.title}
+      >
+        {renderSettings(offcanvas.type, offcanvas.payload)}
+      </SideEditor>
     </>
   );
 }
@@ -151,8 +147,6 @@ export function formatDuration(ms) {
 
 function WorkerPoolSettings({ payload }) {
   const [now, setNow] = useState(performance.now());
-  const [minWorkersValue, setMinWorkersValue] = useState(payload.minWorkers);
-  const [maxWorkersValue, setMaxWorkersValue] = useState(payload.maxWorkers);
 
   // Update every second to show worker times
   useEffect(() => {

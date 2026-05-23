@@ -1,19 +1,21 @@
+import { cpu } from "./simulation";
+
 /**
  * Represents a worker in the distributed system.
  */
 export class TaskWorker {
   static workers = new Map();
 
-  constructor(startupTime = 0) {
+  constructor() {
     this.id = Math.random().toString(36).slice(2, 8);
-
-    const now = performance.now();
 
     // Worker processing state
     this.idle = false;
     this.request = { title: "Startup" };
-    this.requestStartTime = now;
-    this.requestEndTime = now + startupTime;
+
+    this.currentTask = null;
+    this.taskQueue = [];
+    this.maxQueueSize = 100; // Max number of tasks this worker can queue before rejecting new tasks
 
     // Add this new worker instance to the static map
     TaskWorker.workers.set(this.id, this);
@@ -28,26 +30,42 @@ export class TaskWorker {
     return TaskWorker.workers.get(id);
   }
 
-  processRequest(requestObject) {
-    // TODO: Simulate what would happen if a worker received a request
-    this.idle = false;
-    this.request = requestObject;
-    this.requestStartTime = performance.now();
-    this.requestEndTime = this.requestStartTime + Math.random() * 2000; // Simulate 2 seconds processing time
-    return;
+  /**
+   * Adds the provided task to the worker's task queue for processing.
+   * If the queue has reached its maximum size, a warning is logged to the console and the task is rejected.
+   *
+   * @param {Object} task - The task object to be added to the queue.
+   * @returns {boolean} Whether the task was successfully added to the queue.
+   *
+   * @note
+   * Consider implementing cross-validation of tasks at all instance levels
+   * by extracting validateTask as a global function in the CPU module.
+   */
+  addTask(task) {
+    if (this.taskQueue.length > this.maxQueueSize) {
+      console.warn(
+        `Worker ${this.id} task queue is full. Task rejected:`,
+        task,
+      );
+      return false;
+    }
+
+    this.taskQueue.push(task);
+    return true;
   }
 
-  stopProcessing() {
-    if (this.requestEndTime <= performance.now()) {
-      console.info(
-        `Worker: ${this.id} finished processing request: ${this.request.title}`,
-      );
-
-      this.idle = true;
-      this.request = null;
-      this.requestStartTime = performance.now();
-      this.requestEndTime = null;
+  /**
+   * Returns the first task in the worker's task queue. Sets this task as the worker's current task.
+   * @returns {Object | null} The dispatched task, or null if the queue is empty.
+   */
+  getNextTask() {
+    if (this.taskQueue.length === 0) {
+      return null;
     }
+
+    const task = this.taskQueue.shift();
+    this.currentTask = task;
+    return task;
   }
 
   /**

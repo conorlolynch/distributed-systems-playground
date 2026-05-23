@@ -14,3 +14,7 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Todo:
+
+- sim/queue.js -> the design of getState is not ideal, we should be detecting the timestamp of the last addition instead of the raw count, as maybe a field is added just after a remove and before last check, so new updates might be missed

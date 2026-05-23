@@ -1,13 +1,14 @@
-import { useRef, useState } from "react";
-import { useSyncExternalStore } from "react";
+import { useState, useRef, useSyncExternalStore } from "react";
 
-export function WorkerPool({ pool, setOffcanvasFunction }) {
-  const state = useSyncExternalStore(pool.subscribe, pool.getState);
+export function Queue({ queue }) {
+  const state = useSyncExternalStore(queue.subscribe, queue.getState);
 
+  const startX = 50;
+  const startY = 50;
   const width = 160;
   const height = 120;
 
-  const [pos, setPos] = useState({ x: 300, y: 150 });
+  const [pos, setPos] = useState({ x: startX, y: startY });
   const distanceMoved = useRef({ x: 0, y: 0 });
   const dragRef = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
@@ -41,18 +42,18 @@ export function WorkerPool({ pool, setOffcanvasFunction }) {
           distanceMoved.current.y * distanceMoved.current.y,
       ) < THRESHOLD
     ) {
-      setOffcanvasFunction({
-        open: true,
-        type: "workerPool",
-        title: "Worker Pool",
-        payload: {
-          id: pool.id,
-          workers: pool.workers,
-          minWorkers: pool.minNumWorkers,
-          maxWorkers: pool.maxNumWorkers,
-          averageWorkerStartupTime: pool.averageWorkerStartupTime,
-        },
-      });
+      //   setOffcanvasFunction({
+      //     open: true,
+      //     type: "workerPool",
+      //     title: "Worker Pool",
+      //     payload: {
+      //       id: pool.id,
+      //       workers: pool.workers,
+      //       minWorkers: pool.minNumWorkers,
+      //       maxWorkers: pool.maxNumWorkers,
+      //       averageWorkerStartupTime: pool.averageWorkerStartupTime,
+      //     },
+      //   });
     }
 
     dragRef.current = false;
@@ -80,25 +81,6 @@ export function WorkerPool({ pool, setOffcanvasFunction }) {
     });
   };
 
-  // const drawWorkers = (workers) => {
-  //   return workers.map((worker, i) => {
-  //     const cols = Math.ceil(Math.sqrt(workers.length));
-  //     const col = i % cols;
-  //     const row = Math.floor(i / cols);
-  //     const spacing = 25;
-
-  //     return (
-  //       <circle
-  //         key={i}
-  //         cx={30 + col * spacing}
-  //         cy={50 + row * spacing}
-  //         r="8"
-  //         fill="lime"
-  //       />
-  //     );
-  //   });
-  // };
-
   return (
     <svg
       width="100%"
@@ -117,7 +99,7 @@ export function WorkerPool({ pool, setOffcanvasFunction }) {
         onPointerMove={onPointerMove}
         style={{ cursor: "grab", pointerEvents: "auto" }}
       >
-        <rect width={width} height={height} rx="10" fill="red" />
+        <rect width={width} height={height} rx="10" fill="blue" />
         <text
           x={width / 2}
           y="20"
@@ -125,10 +107,7 @@ export function WorkerPool({ pool, setOffcanvasFunction }) {
           fill="white"
           style={{ fontSize: 14 }}
         >
-          Worker Pool
-        </text>
-        <text x={width / 2} y={height / 2} textAnchor="middle">
-          {state.pendingTasks.length} pending tasks
+          Queue: {state.items.length}
         </text>
       </g>
     </svg>

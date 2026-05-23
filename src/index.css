@@ -19,21 +19,24 @@
 /* Stage CSS (for displaying canvas + svg) */
 .stage {
   position: relative;
-  width: 100vw;
-  height: 100vh;
-}
-
-canvas,
-svg {
-  position: absolute;
-  inset: 0;
+  display: inline-block;
+  /* Let the canvas define the size of the stage */
+  width: auto;
+  height: auto;
 }
 
 canvas {
+  display: block;
+  position: relative;
   z-index: 0;
 }
 
 svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   z-index: 1;
   pointer-events: auto;
 }

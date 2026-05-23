@@ -1,211 +1,51 @@
-import { TaskWorker } from "../sim/worker.js";
-
 export class WorkerPool {
-  constructor({ minNumWorkers = 1, maxNumWorkers = 8 } = {}) {
+  constructor() {
     this.id = Math.random().toString(36).slice(2, 8);
-
-    this.minNumWorkers = minNumWorkers;
-    this.maxNumWorkers = maxNumWorkers;
-
-    this.workers = [];
-    this.averageWorkerStartupTime = 500; // ms for a worker to become active
-    this.idleDespawnTime = 10000; // ms of idleness before a worker is despawned
     this.listeners = new Set();
     this.cachedState = null;
-    this.lastWorkerCount = 0;
 
-    // Tasks that a worker has been assigned but hasnt been passed to the CPU yet.
-    // This is to simulate the time between a worker being assigned a task and actually starting to process it on the CPU.
+    // Tasks that are awaiting to be passed to the CPU yet.
     this.pendingTasks = [];
-
-    // Spawn the initial minimum number of workers
-    for (let i = 0; i < this.minNumWorkers; i++) {
-      this.spawnWorker();
-    }
   }
 
   /**
-   * Creates a task for the CPU to spawn a new worker, and adds it to the pending tasks buffer.
-   * Emits an event to notify listeners that a worker spawn has been requested.
-   * When the CPU processes this task, it will create a new worker and emit another event to notify listeners that a worker has been spawned.
-   * @return {Object|null} The newly spawned worker object, or null if the max has been reached.
-   */
-  spawnWorker() {
-    if (this.workers.length >= this.maxNumWorkers) return null;
-
-    // Create a task object, and store it in the pendingTasks array to be executed when CPU is ready.
-    const task = {
-      id: Math.random().toString(36).slice(2, 8),
-      name: "Spawn Worker Pool",
-      execute: () => {
-        const newWorker = new TaskWorker(this.averageWorkerStartupTime);
-        this.workers.push(newWorker);
-        console.log("Spawned worker:", newWorker.id);
-        this.emit({
-          type: "workerSpawned",
-        });
-      },
-    };
-
-    // Add this task to this intances pending tasks buffer. Later this will get flushed to the CPU's buffer, and will be executed when the CPU is ready to process it.
-    this.pendingTasks.push(task);
-
-    // Emit an event to notify that a worker spawn has been requested.
-    this.emit({
-      type: "workerSpawnRequested",
-      taskId: task.id,
-    });
-
-    // Generate a worker
-    //const newWorker = new TaskWorker(this.averageWorkerStartupTime);
-    //if (!newWorker) return null;
-
-    //this.workers.push(newWorker);
-    //console.log("Spawned worker:", newWorker.id);
-    //this.emit();
-    //return newWorker;
-  }
-
-  /**
-   * Important function: This should be called on each tick of the simulation/game loop to update the state of the worker pool.
-   * It checks for completed tasks, assigns new tasks from the buffer to idle workers, and despawns idle workers if necessary.
+   * Adds a new task to the worker pool's pending tasks queue.
+   * @param {Object} request - The request object representing the task to be added.
    * @return {void}
    */
-  update() {
-    // Generate tasks if needed
+  addTask(request) {
+    const minDuration = 4000;
+    const maxDuration = 5000;
+
+    const newTask = {
+      id: request.id,
+      name: null,
+      duration: Math.random() * (maxDuration - minDuration) + minDuration,
+      execute: null,
+    };
+
+    this.pendingTasks.push(newTask);
+    this.emit("taskAdded", newTask);
+    console.log(
+      `Worker Pool (${this.id}): Task added: (${newTask.id}) - Total pending tasks: ${this.pendingTasks.length}`,
+    );
+
+    this.emit();
   }
 
   /**
-   * Removes a inactive worker from the pool, but ensures that the minimum number of workers is maintained.
-   * Emits a state change to listeners after despawning.
-   * @return {boolean} Whether a worker was successfully removed.
-   */
-  despawnWorker(id = null) {
-    // TODO: turn this into a task generator for the CPU
-
-    // Ensure we don't go below the minimum number of workers
-    if (this.workers.length <= this.minNumWorkers) {
-      return false;
-    }
-
-    if (id !== null) {
-      const task = {
-        id: Math.random().toString(36).slice(2, 8),
-        name: "Despawn Worker",
-        execute: () => {
-          // Find the worker with that specific ID, if its idle, remove it from the pool
-        },
-      };
-
-      this.pendingTasks.push(task);
-
-      // Find the worker with the specified ID
-      for (let i = 0; i < this.workers.length; i++) {
-        const worker = this.workers[i];
-        if (worker.id === id) {
-          if (!worker.idle) {
-            console.warn(
-              `Cannot despawn worker ${id}: worker is currently busy.`,
-            );
-            return false;
-          }
-          // Remove the worker from the Worker class static map
-          worker.destroy();
-
-          // Remove the worker from the pool
-          this.workers.splice(i, 1);
-
-          console.log("Despawned worker:", worker.id);
-          console.log("Current workers:", this.workers);
-
-          // Emit state change
-          this.emit();
-          return true;
-        }
-      }
-      console.warn(`Worker with ID ${id} not found.`);
-      return false;
-    }
-
-    // Find an idle worker to remove
-    for (let i = 0; i < this.workers.length; i++) {
-      const worker = this.workers[i];
-      console.log(
-        "Checking worker for despawn:",
-        worker.id,
-        "Status:",
-        worker.status,
-      );
-
-      if (worker.idle) {
-        // Remove the worker from the Worker class static map
-        worker.destroy();
-
-        // Remove the worker from the pool
-        this.workers.splice(i, 1);
-
-        console.log("Despawned worker:", worker.id);
-        console.log("Current workers:", this.workers);
-
-        // Emit state change
-        this.emit();
-        return true;
-      }
-    }
-  }
-
-  /**
-   * Dispatches pending tasks to the CPU for processing. Should be called on each tick of the simulation/game loop.
+   * Dispatches pending tasks to the CPU for processing.
+   * Checks for available CPU capacity and moves tasks from the worker pool's pending queue to the CPU's processing queue.
+   * Called in the main game loop to continuously dispatch tasks as CPU capacity allows.
    * @param {CPU} The CPU instance to dispatch tasks to.
    * @return {void}
    */
   dispatch(cpu) {
-    // Dispatch pending tasks to the CPU
-    while (this.pendingTasks.length > 0 && cpu.hasFreeCore()) {
+    while (this.pendingTasks.length > 0 && cpu.canJoinQueue()) {
       const task = this.pendingTasks.shift();
       cpu.addTask(task);
     }
   }
-
-  /**
-   * Assigns a request to an idle worker in the pool.
-   * @param {Object} requestObject The request object to assign to a worker.
-   * @return {boolean} Whether the assignment was successful.
-   */
-  assignWorker(requestObject) {
-    for (const worker of this.workers) {
-      if (worker.idle) {
-        worker.processRequest(requestObject);
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  setMinWorkers = (newMin) => {
-    this.minNumWorkers = Math.max(1, newMin);
-    console.info("New min workers:", this.minNumWorkers);
-
-    // Spawn or despawn workers to meet the new minimum
-    while (this.workers.length < this.minNumWorkers) {
-      this.spawnWorker();
-    }
-
-    return this.minNumWorkers;
-  };
-
-  setMaxWorkers = (newMax) => {
-    this.maxNumWorkers = Math.max(this.minNumWorkers, newMax);
-    console.info("New max workers:", this.maxNumWorkers);
-
-    // Despawn workers if new max is less than number of current workers
-    while (this.workers.length > this.maxNumWorkers) {
-      this.despawnWorker();
-    }
-
-    return this.maxNumWorkers;
-  };
 
   /**
    * Get the current state of the worker pool.
@@ -216,16 +56,13 @@ export class WorkerPool {
   getState = () => {
     const newState = {
       id: this.id,
-      minNumWorkers: this.minNumWorkers,
-      maxNumWorkers: this.maxNumWorkers,
-      workers: this.workers,
+      pendingTasks: this.pendingTasks,
     };
 
-    // Only cache if the number of workers hasn't changed
+    // Cache if the number of workers hasn't changed
     // This detects mutations to the workers array
-    if (!this.cachedState || this.lastWorkerCount !== this.workers.length) {
+    if (!this.cachedState) {
       this.cachedState = newState;
-      this.lastWorkerCount = this.workers.length;
     }
 
     return this.cachedState;
@@ -247,7 +84,7 @@ export class WorkerPool {
    * Does this by calling each listener function.
    * @return {void}
    */
-  emit = () => {
-    this.listeners.forEach((listener) => listener());
+  emit = (event, data) => {
+    this.listeners.forEach((listener) => listener(event, data));
   };
 }

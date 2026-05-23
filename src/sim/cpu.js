@@ -14,22 +14,46 @@ export class CPU {
     this.freeIndexes = new Set([0, 1, 2, 3, 4, 5, 6, 7]); // 8-core CPU
     this.tokens = [null, null, null, null, null, null, null, null]; // 8-core CPU
     this.queue = [];
+    this.tasksComplete = 0;
+
+    this.cachedState = null; // Cache for the CPU state to optimize React re-renders
 
     // The maximum number of tasks that can be queued at once. Simulates the CPU's ability to buffer incoming tasks before it becomes overwhelmed.
-    this.maxQueueSize = 100;
+    this.maxQueueSize = 4;
+
+    // Listeners for external subscribers (e.g. React components)
+    this.listeners = new Set();
   }
+
+  getState = () => {
+    const newState = {
+      freeIndexes: this.freeIndexes,
+      tokens: this.tokens,
+      queue: this.queue,
+      tasksComplete: this.tasksComplete,
+    };
+
+    if (!this.cachedState) {
+      this.cachedState = newState;
+    }
+
+    return this.cachedState;
+  };
 
   /**
    * Adds a new task to the CPU's processing queue.
-   * @param {Object} task - The task to be added to the queue.
-   * @param {string} task.id - Unique identifier for the task.
-   * @param {string} task.name - A descriptive name for the task.
-   * @param {number} task.duration - Time in milliseconds that the task takes to complete.
-   * @param {function} task.execute - A function that simulates the execution of the task.
+   * @param {Object} task - The task object to be added to the queue.
    */
   addTask(task) {
+    if (this.queue.length >= this.maxQueueSize) {
+      console.warn("CPU queue is full. Task rejected:", task);
+      return;
+    }
+
     this.queue.push(task);
-    console.log(`Added task. Queue:`, this.queue);
+    console.log(
+      `CPU: Added task (${task.id}) to queue - Queue length: ${this.queue.length}`,
+    );
   }
 
   /**
@@ -38,6 +62,10 @@ export class CPU {
    */
   hasFreeCore() {
     return this.freeIndexes.size > 0;
+  }
+
+  canJoinQueue() {
+    return this.queue.length < this.maxQueueSize;
   }
 
   /**
@@ -53,7 +81,7 @@ export class CPU {
   }
 
   /**
-   * Loads the next task from the top of the queue for processing.
+   * Loads the next task into a free core, sets the tasks start, and end time if duration of task is provided.
    * @returns {Object|null} The task that is now being processed by a CPU core, or null if no task was loaded (e.g., no free cores or empty queue).
    */
   loadNextTask() {
@@ -72,7 +100,11 @@ export class CPU {
       return null;
     }
 
+    // Calulate the estimated end time for this task based on its estimated duration.
+    // This simulates the processing of the task by the CPU core.
+    // Instead of the CPU actually doing this work, we just delay the completion of the task to give the sense that work is being done.
     nextTask.startTime = performance.now();
+    nextTask.endTime = nextTask.startTime + (nextTask.duration || 10);
 
     // 2) Assign this task to the free token and core. Remove the token from the free set so it's not assigned again.
     this.tokens[freeIndex] = nextTask;
@@ -80,6 +112,26 @@ export class CPU {
 
     // Finally return the task that is now being processed by the CPU core
     return nextTask;
+  }
+
+  /**
+   * Executes a task by invoking its execute callback function.
+   * Logs the task execution with a timestamp, task ID, task name, and the simulated delay duration.
+   *
+   * @param {Object} task - The task object to execute
+   * @param {string} task.id - Unique identifier for the task
+   * @param {string} task.name - Human-readable name of the task
+   * @param {number} [task.duration] - Simulated delay in milliseconds before task execution (optional)
+   * @param {Function} [task.execute] - Callback function to execute. Only runs if this property exists
+   */
+  runTask(task) {
+    if (task.execute) {
+      const waited = task.duration ?? 0;
+      console.log(
+        `[${new Date().toISOString()}] [Task ${task.id}] Executing "${task.name}" after ${waited}ms simulated delay`,
+      );
+      task.execute();
+    }
   }
 
   /**
@@ -91,18 +143,51 @@ export class CPU {
     if (tokenIndex < 0 || tokenIndex >= this.tokens.length) {
       throw new Error("Invalid token index");
     }
+
     this.tokens[tokenIndex] = null;
     this.freeIndexes.add(tokenIndex);
+    this.tasksComplete += 1;
+    console.log(
+      `CPU: Task complete. Total tasks complete: ${this.tasksComplete}.`,
+    );
+    // Notify subscribers that the CPU state changed
+    this.emit();
     return true;
   }
+
+  tick(dt = 16) {
+    // TODO: move away from performance.now and use the dt paramter to track task progress
+
+    // Fill free cores from queue
+    while (this.hasFreeCore() && this.queue.length > 0) {
+      this.loadNextTask();
+    }
+
+    // Running tasks, and release any that are finished
+    this.tokens.forEach((task, index) => {
+      if (task && !this.freeIndexes.has(index)) {
+        if (performance.now() >= task.endTime) {
+          // If the task has exceeded its estimated duration, try execute any executable code it has
+          this.runTask(task);
+
+          // Finally, release the token back to the pool.
+          this.releaseTask(index);
+        }
+      }
+    });
+
+    // todo: check if this breaks anything
+    this.emit();
+  }
+
+  // Subscribe to CPU state changes. Returns an unsubscribe function.
+  subscribe = (listener) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  // Emit state change to all listeners
+  emit = () => {
+    this.listeners.forEach((l) => l());
+  };
 }
-
-/* 
-
-There is a difference between Worker Pool and CPU (cpu core = workers, tokens etc)
-Worker Pool is an abstraction of cpu and memory, preventing the cpu and memory from being overloaded with request data, deciding how to control the flow of requests to cpu and memory.
-
-CPU has a cpu queue of tasks to process from many instances e.g. cache, db etc
-CPU cores (tokens) are the actual processing units that execute tasks.
-
-*/
